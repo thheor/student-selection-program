@@ -10,6 +10,7 @@ RowResult res;
 SqlResult sqlRes;
 DocResult docs;
 Row row;
+Value val;
 
 bool isExist(std::string table, std::string value, std::string where, auto param){
     Table tab = db.getTable(table);
@@ -31,6 +32,19 @@ template <typename T> T data(std::string table, std::string value, std::string w
     Row row = *res.begin();
 
     return row[0].get<T>();
+}
+
+bool isNull(std::string table, std::string value, std::string where, auto param){
+    Table tab = db.getTable(table);
+    res = tab.select(value).where(where + " = :param").bind("param", param).execute();
+    row = res.fetchOne();
+    val = row[0];
+
+    if(val.isNull()){
+        return true;
+    }
+
+    return false;
 }
 
 int login(){
@@ -69,8 +83,6 @@ int login(){
 
         break;
     case 2:
-        // Kayanya username mending ganti NISN
-        // trus tanggal lahir ganti NPSN
         reg:
         cout << "\n=== REGISTER ===\n";
         cout << "Email: ";
@@ -97,6 +109,12 @@ int login(){
         tab.insert("email", "password", "tanggal_lahir")
             .values(email, password, tanggalLahir)
             .execute();
+    
+        userId = data<int>("akun_user", "id_user", "email", email);
+
+        tab = db.getTable("biodata");
+        tab.insert("id_user")
+            .values(userId);
 
         cout << "Register account successfully!\n";
         break;
@@ -414,38 +432,29 @@ void announcement(int userId, std::string type){
 
 int main() {
     Table tab = db.getTable("akun_user");
-    int option, userId, biodataId;
+    int option, userId, biodataId, nisn;
     std::string username, isEligible;
 
     userId = login();
-    bool reInput = true, exist;
+    bool reInput = true, null;
     char confirm;
 
-    biodataId = data<int>("biodata", "id_biodata", "id_user", userId);
-    
     do{
         cout << "\n=== MENU UTAMA ===\n";
         cout << "1. Verifikasi Data Siswa dan Sekolah\n";
         cout << "2. Pendaftaran SNBP\n";
-        cout << "3. Pendaftaran UTBK-SNBT\n";
+        cout << "3. Pendaftaran SNBT\n";
         cout << "4. Exit\n";
         cout << "Choose [1-4]: ";
         cin >> option;
         
         int nisn, tahunLulus, sekolahId;
-        std::string nama, tempat, tanggalLahir, sekolah, jurusan;
+        std::string nama, temp, tempat, tanggalLahir, sekolah, jurusan;
         switch(option){
             case 1:
                 cout << "\n=== Verifikasi biodata ===\n";
-
-                exist = isExist("biodata", "id_user", "id_user", userId);
-                if(exist){
-                    // Table tab = db.getTable("biodata");
-                    // RowResult res = tab.select("id_biodata", "id_user", "id_sekolah", "nama_lengkap")
-                    //             .where("id_user = :param")
-                    //             .bind("param", userId)
-                    //             .execute();
-                    
+                null = isNull("biodata", "nama_lengkap", "id_user", userId);
+                if(!null){
                     sess.sql("USE snpmb").execute();
                     SqlResult sqlRes = sess.sql("SELECT b.nisn, b.nama_lengkap, b.tempat_lahir, b.tanggal_lahir, b.jurusan, b.tahun_lulus, sa.nama_sekolah "
                                                 "FROM biodata b "
@@ -468,61 +477,64 @@ int main() {
                         cout << "Sekolah: " << row[6] << endl;
                     }
                 } else {
-                    cout << "NISN: ";
-                    cin >> nisn;
+                    cin.ignore();
                     cout << "Nama: ";
-                    cin.ignore();
                     getline(cin, nama);
-                    cout << "Tempat lahir: ";
                     cin.ignore();
+                    cout << "Tempat lahir: ";
                     getline(cin, tempat);
                     cout << "Tanggal Lahir [YYYY-MM-DD]: ";
                     cin >> tanggalLahir;
+                    cin.ignore();
                     cout << "Sekolah: ";
-                    cin.ignore();
                     getline(cin, sekolah);
-                    cout << "Jurusan: ";
                     cin.ignore();
+                    cout << "Jurusan: ";
                     getline(cin, jurusan);
                     cout << "Tahun lulus: ";
                     cin >> tahunLulus;
                     
                     sekolahId = data<int>("sekolah_asal", "id_sekolah", "nama_sekolah", sekolah);
                     tab = db.getTable("biodata");
-                    // ganti jadi modify values
-                    tab.insert("id_user", "id_sekolah", "nisn", "nama_lengkap", "tempat_lahir", "tanggal_lahir", "jurusan", "tahun_lulus")
-                        .values(userId, sekolahId, nisn, nama, tempat, tanggalLahir, jurusan, tahunLulus)
-                        .execute();
+
+                    tab.update().set("nama_lengkap", nama).set("tempat_lahir", tempat).set("tanggal_lahir", tanggalLahir)
+                                .set("jurusan", jurusan).set("tahun_lulus", tahunLulus)
+                                .where("id_user = :param")
+                                .bind("param", userId)
+                                .execute();
 
                     cout << "Data updated successfully!\n";
                 }
                 break;
             case 2:
                 // if nisn is not in the isEligible database, print you are not eligible 
-                exist = isExist("biodata", "id_user", "id_user", userId);
-                if(!exist){
+                null = isNull("biodata", "nama_lengkap", "id_user", userId);
+                if(null){
                     cout << "\nYou have to verify your data first!\n";
                     break;
                 }
+
                 isEligible = data<std::string>("biodata", "status_eligible", "id_user", userId);
     
                 if(isEligible == "Tidak_Eligible"){
                     cout << "Maaf anda bukan siswa eligible.\n";
                 } else {
                     cout << "\n=== SNBP ===\n";
+                    biodataId = data<int>("biodata", "id_biodata", "id_user", userId);
                     inputJurusan("SNBP", userId, biodataId);
                     announcement(userId, "SNBP");
                 }
 
                 break;
             case 3:
-                exist = isExist("biodata", "id_user", "id_user", userId);
-                if(!exist){
+                null = isNull("biodata", "nama_lengkap", "id_user", userId);
+                if(null){
                     cout << "\nYou have to verify your data first!\n";
                     break;
                 }
 
                 cout << "\n=== SNBT ===\n";
+                biodataId = data<int>("biodata", "id_biodata", "id_user", userId);
                 inputJurusan("SNBT", userId, biodataId);
                 soalUtbk(userId);
                 announcement(userId, "SNBT");
